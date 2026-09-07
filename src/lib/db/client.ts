@@ -17,6 +17,10 @@ export type {
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
+  BuybackStatus,
+  BuybackItemStatus,
+  PayoutStatus,
+  PayoutMethod,
 } from "@prisma/client";
 
 // A Prisma interactive-transaction handle - the type callers need to

@@ -117,10 +117,16 @@ hard gate, for the reason documented in that file.
   Stripe can't be reached), a signature-verified and idempotent webhook
   at `/api/webhooks/stripe`, and an IDOR-guarded order confirmation
   page at `/commandes/[id]`.
+- **Buyback**: submit-and-track a rachat request at `/rachat` (with a
+  pre-estimate range computed by the same pure valuation service used
+  post-inspection), staff queues under `/personnel/rachat/*` for
+  receiving, inspection, valuation approval, payout release
+  (maker-checker enforced), and reconditioning - ending in a real,
+  purchasable `InventoryItem` with its own resale price and photos.
 
 ## Known gaps at this stage of the project (tracked, not hidden)
 
-This repository is at the end of **Phase 5 - Cart + Checkout + Stripe**
+This repository is at the end of **Phase 6 - Buyback (MVP slice)**
 (see `ROADMAP.md`). Deliberately not yet built:
 
 - **A real Stripe payment has never actually run** - this sandbox has
@@ -160,5 +166,19 @@ This repository is at the end of **Phase 5 - Cart + Checkout + Stripe**
   end-to-end - see the ADRs and `ROADMAP.md` for what that covered. Run
   `docker compose config` and `docker compose up` in a normal
   environment to confirm the compose file itself before relying on it.
-- Buyback (the platform's differentiator) is Phase 6 onward - not
-  started yet.
+- **Buyback (the platform's differentiator) is now live end-to-end** -
+  submission, pre-estimate, shipment, warehouse receiving, per-item
+  inspection, valuation approval, customer accept/reject, payout with
+  maker-checker enforced on every release, and a reconditioning
+  pipeline that ends in a real, purchasable InventoryItem. Verified
+  both by an integration test running the whole state machine against
+  real Postgres and by a live browser pass across all six actor roles
+  (customer, warehouse, inspector, manager, finance) - see `ROADMAP.md`
+  Phase 6 for the full breakdown and its own known gaps (no
+  `TrustScoreSnapshot`/`FraudSignal` aggregation yet, no admin UI to
+  edit `BuybackRule` coefficients, a rejected item's unit is marked
+  DISPOSED rather than actually returned to the customer).
+- Staff buyback pages live under `/personnel/rachat/*`, separate from
+  `/admin` - the operational roles they're for (INSPECTOR/WAREHOUSE/
+  MANAGER/FINANCE) don't hold `admin.access`. A unified back-office
+  covering all of this is Phase 7.

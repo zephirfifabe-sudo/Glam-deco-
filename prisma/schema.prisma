@@ -130,6 +130,49 @@ enum PaymentStatus {
   DISPUTED
 }
 
+// BUYBACK.md §1. Two terminal-ish branches share the pre-RECEIVED
+// entry point: CANCELLED is reachable from any state before RECEIVED
+// (customer changed their mind before shipping anything back);
+// ACCEPTED/PARTIALLY_ACCEPTED/REJECTED are the per-item-derived outcome
+// of CUSTOMER_CONFIRMATION, never hand-set independently (BUYBACK.md §2).
+enum BuybackStatus {
+  DRAFT
+  SUBMITTED
+  PRE_ESTIMATE
+  AWAITING_SHIPMENT
+  RECEIVED
+  INSPECTION
+  VALUATION
+  CUSTOMER_CONFIRMATION
+  ACCEPTED
+  PARTIALLY_ACCEPTED
+  REJECTED
+  CANCELLED
+  PAYOUT_PENDING
+  PAID
+  RECONDITIONING
+  AVAILABLE_FOR_RESALE
+}
+
+enum BuybackItemStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum PayoutMethod {
+  BANK_TRANSFER
+  STRIPE
+}
+
 // --- Identity & access ---
 
 model User {
@@ -142,15 +185,22 @@ model User {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  roles              UserRoleAssignment[]
-  sessions           Session[]
-  mfaSecret          MfaSecret?
-  verificationTokens VerificationToken[]
-  addresses          Address[]
-  consents           Consent[]
-  inventoryMovements InventoryMovement[]
-  cart               Cart?
-  orders             Order[]
+  roles                     UserRoleAssignment[]
+  sessions                  Session[]
+  mfaSecret                 MfaSecret?
+  verificationTokens        VerificationToken[]
+  addresses                 Address[]
+  consents                  Consent[]
+  inventoryMovements        InventoryMovement[]
+  cart                      Cart?
+  orders                    Order[]
+  buybackRequests           BuybackRequest[]
+  inspectionsDone           Inspection[]
+  payouts                   Payout[]             @relation("PayoutRecipient")
+  payoutsPrepared           Payout[]             @relation("PayoutPreparer")
+  payoutsReleased           Payout[]             @relation("PayoutReleaser")
+  trustScores               TrustScoreSnapshot[]
+  buybackValuationApprovals BuybackRequest[]     @relation("BuybackValuationApprover")
 
   @@index([status])
 }
@@ -248,6 +298,8 @@ model Address {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
+  buybackRequests BuybackRequest[]
+
   @@index([userId])
 }
 
@@ -274,6 +326,8 @@ model Category {
   parent   Category?  @relation("CategoryToParent", fields: [parentId], references: [id])
   children Category[] @relation("CategoryToParent")
   products Product[]
+
+  buybackRule BuybackRule?
 
   @@index([parentId])
 }
@@ -332,6 +386,7 @@ model ProductVariant {
   inventoryItems InventoryItem[]
   cartItems      CartItem[]
   orderItems     OrderItem[]
+  buybackItems   BuybackItem[]
 
   @@index([productId])
 }
@@ -372,21 +427,25 @@ model InventoryLocation {
 // many of these; only an InventoryItem is ever actually allocated to
 // an order.
 model InventoryItem {
-  id                String                     @id @default(cuid())
-  productVariantId  String
-  productVariant    ProductVariant             @relation(fields: [productVariantId], references: [id])
-  serial            String                     @unique
-  condition         Condition
-  status            InventoryStatus            @default(AVAILABLE)
-  locationId        String
-  location          InventoryLocation          @relation(fields: [locationId], references: [id])
-  acquisitionSource InventoryAcquisitionSource @default(PURCHASE_ORDER)
-  costBasisMinor    Int?
-  // originBuybackItemId intentionally omitted for now - BuybackItem
-  // doesn't exist until Phase 6. Add the FK then, additively.
-  conditionNotes    String?
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
+  id                  String                     @id @default(cuid())
+  productVariantId    String
+  productVariant      ProductVariant             @relation(fields: [productVariantId], references: [id])
+  serial              String                     @unique
+  condition           Condition
+  status              InventoryStatus            @default(AVAILABLE)
+  locationId          String
+  location            InventoryLocation          @relation(fields: [locationId], references: [id])
+  acquisitionSource   InventoryAcquisitionSource @default(PURCHASE_ORDER)
+  costBasisMinor      Int?
+  // Set only for acquisitionSource = BUYBACK, by the reconditioning
+  // pipeline (BUYBACK.md §8) - this unit's own photos are captured
+  // fresh at that point, never inherited from the original Product's
+  // marketing photos (DATABASE.md §4/§6).
+  originBuybackItemId String?
+  originBuybackItem   BuybackItem?               @relation(fields: [originBuybackItemId], references: [id])
+  conditionNotes      String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
 
   images    ProductImage[]
   movements InventoryMovement[]
@@ -394,6 +453,7 @@ model InventoryItem {
 
   @@index([status])
   @@index([productVariantId])
+  @@index([originBuybackItemId])
 }
 
 // Append-only - never updated or deleted, only inserted (DATABASE.md
@@ -489,6 +549,8 @@ model OrderItem {
   quantity         Int            @default(1)
   createdAt        DateTime       @default(now())
 
+  originatingBuybackItems BuybackItem[]
+
   @@index([orderId])
 }
 
@@ -530,4 +592,188 @@ model PaymentEvent {
 
   @@unique([provider, eventId])
   @@index([paymentId])
+}
+
+// --- Buyback ---
+
+// One customer submission, covering one or more items (BUYBACK.md §1,
+// ADR-005). status is the aggregate view; each BuybackItem below tracks
+// its own outcome, and the service layer derives this field from those
+// - never hand-set independently (BUYBACK.md §2).
+model BuybackRequest {
+  id                    String        @id @default(cuid())
+  userId                String
+  user                  User          @relation(fields: [userId], references: [id])
+  status                BuybackStatus @default(DRAFT)
+  // Pickup/return address for shipping the items back - nullable
+  // because a DRAFT request may not have one chosen yet.
+  addressId             String?
+  address               Address?      @relation(fields: [addressId], references: [id])
+  submittedAt           DateTime?
+  // The staff member who approved the final valuation (buyback.approve,
+  // VALUATION -> CUSTOMER_CONFIRMATION) - carried forward as
+  // Payout.preparedById once the customer confirms, since "creates/
+  // approves the valuation" is the maker half of the payout's
+  // maker-checker pair (BUYBACK.md §7).
+  valuationApprovedById String?
+  valuationApprovedBy   User?         @relation("BuybackValuationApprover", fields: [valuationApprovedById], references: [id])
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  items  BuybackItem[]
+  payout Payout?
+
+  @@index([userId])
+  @@index([status])
+}
+
+// Per-item outcome (ADR-005): its own status/value, independent of
+// sibling items in the same request.
+model BuybackItem {
+  id                  String            @id @default(cuid())
+  requestId           String
+  request             BuybackRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productVariantId    String
+  productVariant      ProductVariant    @relation(fields: [productVariantId], references: [id])
+  declaredCondition   Condition
+  declaredNotes       String?
+  customerPhotos      String[]
+  // Indicative range shown before shipment, computed from the
+  // self-declared condition (BUYBACK.md §4) - never conflated with
+  // finalValueMinor below.
+  preEstimateMinMinor Int?
+  preEstimateMaxMinor Int?
+  status              BuybackItemStatus @default(PENDING)
+  // Definitive value after inspection, requires customer confirmation
+  // before any payout is created (BUYBACK.md §4).
+  finalValueMinor     Int?
+  rejectionReason     String?
+  originalOrderItemId String?
+  originalOrderItem   OrderItem?        @relation(fields: [originalOrderItemId], references: [id])
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  inspection             Inspection?
+  reconditionedInventory InventoryItem[]
+
+  @@index([requestId])
+  @@index([productVariantId])
+}
+
+// Admin-editable coefficients per category (BUYBACK.md §3/§4, ADR-005)
+// - the valuation formula's inputs live here, never hardcoded, so
+// pricing can be tuned without a deploy. conditionMultipliers is a
+// Condition -> multiplier map (Json, since Prisma has no
+// enum-keyed-scalar-map type) rather than one flat Float, because the
+// same rule must price NEW down through UNUSABLE differently.
+model BuybackRule {
+  id                     String   @id @default(cuid())
+  categoryId             String   @unique
+  category               Category @relation(fields: [categoryId], references: [id])
+  active                 Boolean  @default(true)
+  conditionMultipliers   Json
+  seasonMultiplier       Float    @default(1)
+  demandMultiplier       Float    @default(1)
+  shippingCostMinor      Int      @default(0)
+  inspectionCostMinor    Int      @default(0)
+  cleaningCostMinor      Int      @default(0)
+  refurbishmentCostMinor Int      @default(0)
+  storageCostMinor       Int      @default(0)
+  riskMarginRate         Float    @default(0.05)
+  desiredMarginRate      Float    @default(0.15)
+  minPayoutMinor         Int      @default(0)
+  maxPayoutMinor         Int?
+  maxQuantityPerRequest  Int      @default(5)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// --- Inspection ---
+
+// 1:1 with BuybackItem (BUYBACK.md §5). discrepancyFlag/discrepancyNotes
+// feed TrustScore and fraud signals - never silently discarded when
+// declaredCondition != observedCondition (brief §36).
+model Inspection {
+  id                 String      @id @default(cuid())
+  buybackItemId      String      @unique
+  buybackItem        BuybackItem @relation(fields: [buybackItemId], references: [id], onDelete: Cascade)
+  inspectorId        String
+  inspector          User        @relation(fields: [inspectorId], references: [id])
+  receivedQuantity   Int         @default(1)
+  expectedQuantity   Int         @default(1)
+  declaredCondition  Condition
+  observedCondition  Condition
+  defects            String[]
+  missingParts       String[]
+  inspectionPhotos   String[]
+  proposedValueMinor Int
+  discrepancyFlag    Boolean     @default(false)
+  discrepancyNotes   String?
+  completedAt        DateTime?
+  createdAt          DateTime    @default(now())
+
+  @@index([buybackItemId])
+  @@index([inspectorId])
+}
+
+// --- Payouts ---
+
+// Separate ledger from Payment/ADR-004 - money in and money out never
+// share a row (ADR-005). One payout per request, enforced by the
+// unique buybackRequestId (BUYBACK.md §7 - prevents a double payout on
+// a retried confirmation). preparedBy/releasedBy are deliberately two
+// different FKs: high-value payouts require maker-checker (brief
+// §41/§82/§102), enforced in payoutService by requiring
+// preparedById != releasedById, not just by having two columns.
+model Payout {
+  id               String         @id @default(cuid())
+  buybackRequestId String         @unique
+  buybackRequest   BuybackRequest @relation(fields: [buybackRequestId], references: [id])
+  userId           String
+  user             User           @relation("PayoutRecipient", fields: [userId], references: [id])
+  status           PayoutStatus   @default(PENDING)
+  amountMinor      Int
+  method           PayoutMethod   @default(BANK_TRANSFER)
+  destinationRef   String?
+  preparedById     String
+  preparedBy       User           @relation("PayoutPreparer", fields: [preparedById], references: [id])
+  releasedById     String?
+  releasedBy       User?          @relation("PayoutReleaser", fields: [releasedById], references: [id])
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  events PayoutEvent[]
+
+  @@index([status])
+  @@index([userId])
+}
+
+model PayoutEvent {
+  id         String   @id @default(cuid())
+  payoutId   String
+  payout     Payout   @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  type       String
+  occurredAt DateTime @default(now())
+  payload    Json?
+
+  @@index([payoutId])
+}
+
+// --- Trust & Fraud ---
+
+// One row per computation (BUYBACK.md §6) - never overwritten in
+// place, so a history of how a user's score evolved is always
+// available. signals stores the full breakdown alongside the score
+// itself so every computation is explainable, not just a bare number
+// (BUYBACK.md §6 guardrails).
+model TrustScoreSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  score      Float
+  signals    Json
+  computedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([computedAt])
 }

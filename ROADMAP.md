@@ -167,24 +167,97 @@ webhook response.
 - Guest checkout doesn't exist - `Cart.userId` is required, matching
   DATABASE.md's note that guest/session carts are a later extension.
 
-## Phase 6 — Buyback (MVP slice)
+## Phase 6 — Buyback (MVP slice) ✅ done
 
-BuybackRequest/BuybackItem submission with pre-estimate
-(BuybackValuationService v1 + a first set of BuybackRule rows),
-shipment-back tracking, Inspection UI for INSPECTOR role, valuation
-finalization, customer confirmation, Payout creation (manual
-release acceptable for MVP — full maker-checker UI can follow in
-Phase 7), reconditioning pipeline stub through to
-`AVAILABLE_FOR_RESALE` creating a real purchasable InventoryItem.
-E2E: buyback submit → inspect → accept/reject per item → payout →
-item resellable.
+Full state machine (`server/domain/buyback/stateMachine.ts`, DRAFT →
+SUBMITTED → PRE_ESTIMATE → AWAITING_SHIPMENT → RECEIVED → INSPECTION →
+VALUATION → CUSTOMER_CONFIRMATION → ACCEPTED/PARTIALLY_ACCEPTED/
+REJECTED/CANCELLED → PAYOUT_PENDING → PAID → RECONDITIONING →
+AVAILABLE_FOR_RESALE, BUYBACK.md §1) and a pure
+`BuybackValuationService` (`server/domain/buyback/valuation.ts`,
+BUYBACK.md §4) reused unchanged for both the customer-facing
+pre-estimate range and the inspector-facing definitive final value.
+BuybackRequest/BuybackItem submission with eligibility gates
+(category `BuybackRule.active`, personalization opt-out) that fail
+closed; shipment confirmation and warehouse receiving (creates one
+InventoryItem per item in `INSPECTION`/`PENDING_INSPECTION` from the
+moment goods physically arrive, not at the end of the pipeline - see
+the comment in `buybackService.receiveShipment`); per-item Inspection
+recording with `discrepancyFlag` when observed condition differs from
+declared, and a required `buyback.approve` gate before the customer
+ever sees a definitive number; customer accept/reject per item
+(`deriveRequestStatusFromItems`, BUYBACK.md §2) with the Payout created
+in the same transaction as the accepting status update (BUYBACK.md
+§7); payout release with **maker-checker enforced for every payout**
+(the valuation approver may never also release the money - see
+`payoutService.releasePayout`, a deliberately stricter simplification
+than BUYBACK.md §7's "high-value payouts" wording, since no
+per-category threshold field exists yet to carve out an exception);
+reconditioning that creates a dedicated single-unit ProductVariant per
+reconditioned item (so real per-unit resale pricing flows through the
+existing cart/checkout pricing path unchanged - DATABASE.md §4's
+per-unit-priced used listing wasn't wired into Phases 3-5's
+cart/checkout, and retrofitting that was out of scope here) and only
+then flips the InventoryItem `AVAILABLE`, with its own `ProductImage`
+rows (never the original Product's marketing photos).
+
+Verified two ways: `tests/integration/buyback-lifecycle.test.ts` runs
+the entire state machine against real Postgres in one test file
+(submit → accumulate a second item → confirm shipment → receive →
+inspect both items, one with a discrepancy → approve valuation →
+customer partially accepts → maker-checker-enforced payout release →
+reconditioning → a real, purchasable InventoryItem with its own
+resale-priced ProductVariant), plus the two eligibility gates. Also
+verified live end-to-end through the actual browser UI across all six
+actor roles (customer, warehouse, inspector, manager, finance) via
+`/rachat` and the five `/personnel/rachat/*` staff queues - this
+caught one real bug before it shipped: an empty optional
+`overrideValueMinor` form field was coercing to `0` (a defined value)
+instead of `undefined`, wrongly tripping the "override requires a
+justification" check on every inspection. Fixed with a Zod
+`preprocess` step; see the comment in `features/buyback/staffSchemas.ts`.
+
+Staff pages live under `/personnel/rachat/*`, not `/admin` - the
+buyback operational roles (INSPECTOR/WAREHOUSE/MANAGER/FINANCE) hold
+no `admin.access` permission in SECURITY.md §2's default matrix, so a
+separate layout gates on being signed in only, and each page checks
+its own specific permission via the service layer.
+
+**Known gaps, deliberate and tracked:**
+
+- The reconditioning pipeline's QUALITY_CHECK/PHOTOS/PRICING sub-steps
+  (BUYBACK.md §8) are one staff form submission, not three tracked
+  states - `BuybackStatus` itself only has `RECONDITIONING`/
+  `AVAILABLE_FOR_RESALE`, no intermediate enum values, so this is a UI
+  simplification, not a data-model gap. A multi-screen wizard tracking
+  each sub-step individually is a Phase 7 back-office improvement.
+- A rejected buyback item's InventoryItem is marked `DISPOSED`
+  (`INSPECTION_REJECTED` movement) rather than actually shipped back to
+  the customer - there is no "return to customer" InventoryStatus or
+  flow yet. Documented simplification, same class as the Phase 5
+  known gaps.
+- `TrustScoreSnapshot`/`FraudSignal` (DATABASE.md §"Trust & Fraud",
+  BUYBACK.md §6) are not built - discrepancy flags are recorded on
+  `Inspection` but nothing yet aggregates them into a score. Explicitly
+  out of this MVP slice; BUYBACK.md §6's guardrails (human review
+  before any consequential action, no protected-characteristic inputs,
+  legal sign-off before restricting a real customer) apply once it is.
+- No admin UI to edit `BuybackRule` coefficients yet
+  (`buyback.rules.write` permission is seeded and granted to MANAGER,
+  but nothing reads/writes it from a page) - rules are edited directly
+  in the database for now; the UI is a Phase 7 back-office item.
+- Guest/unauthenticated buyback doesn't exist, matching Cart's Phase 5
+  scope - `BuybackRequest.userId` is required.
 
 ## Phase 7 — Admin back-office
 
 Dashboard (orders/stock/buyback/payment KPIs), full catalog/inventory
-CRUD, buyback/inspection/payout management with maker-checker,
-user/role management, fraud queue, audit log viewer — all with
-server-side pagination/filtering (brief §80).
+CRUD, a proper admin UI for the buyback/inspection/payout workflows
+Phase 6 already built at `/personnel/rachat/*` (maker-checker on
+payouts is already enforced server-side - this phase gives it a
+back-office home plus `BuybackRule` coefficient editing), user/role
+management, fraud queue, audit log viewer — all with server-side
+pagination/filtering (brief §80).
 
 ## Phase 8 — Security hardening pass
 

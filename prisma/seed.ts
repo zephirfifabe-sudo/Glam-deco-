@@ -23,6 +23,10 @@ const PERMISSIONS = [
   { key: "buyback.read", description: "View any customer's buyback requests" },
   { key: "buyback.inspect", description: "Record inspection results" },
   { key: "buyback.approve", description: "Approve final buyback valuation" },
+  {
+    key: "buyback.rules.write",
+    description: "Edit BuybackRule pricing coefficients per category",
+  },
   { key: "payout.create", description: "Prepare a buyback payout" },
   {
     key: "payout.approve",
@@ -46,7 +50,13 @@ const ROLE_MATRIX: Record<string, readonly string[]> = {
   INSPECTOR: ["buyback.read", "buyback.inspect"],
   WAREHOUSE: ["inventory.read", "inventory.write"],
   FINANCE: ["payout.create", "payout.approve", "refund.create"],
-  MANAGER: ["product.write", "order.manage", "buyback.approve", "fraud.review"],
+  MANAGER: [
+    "product.write",
+    "order.manage",
+    "buyback.approve",
+    "buyback.rules.write",
+    "fraud.review",
+  ],
   ADMIN: PERMISSIONS.map((p) => p.key),
   SUPER_ADMIN: PERMISSIONS.map((p) => p.key),
 };
@@ -257,11 +267,57 @@ async function seedInventory(products: {
   }
 }
 
+// BUYBACK.md §3/§4: one BuybackRule per category, admin-editable
+// afterwards (buyback.rules.write) rather than hardcoded - this only
+// seeds a sane starting point for local dev/demo so the buyback flow
+// has something to price against out of the box.
+const BUYBACK_CONDITION_MULTIPLIERS = {
+  NEW: 0.9,
+  LIKE_NEW: 0.8,
+  EXCELLENT: 0.7,
+  GOOD: 0.6,
+  FAIR: 0.45,
+  DAMAGED: 0.25,
+  INCOMPLETE: 0.15,
+  UNUSABLE: 0.05,
+  PENDING_INSPECTION: 0.5,
+};
+
+async function seedBuybackRules() {
+  const categories = await prisma.category.findMany({
+    where: {
+      slug: { in: ["decoration-mariage", "decoration-baby-shower"] },
+    },
+  });
+
+  for (const category of categories) {
+    await prisma.buybackRule.upsert({
+      where: { categoryId: category.id },
+      update: {},
+      create: {
+        categoryId: category.id,
+        active: true,
+        conditionMultipliers: BUYBACK_CONDITION_MULTIPLIERS,
+        shippingCostMinor: 300,
+        inspectionCostMinor: 100,
+        cleaningCostMinor: 100,
+        refurbishmentCostMinor: 0,
+        storageCostMinor: 100,
+        riskMarginRate: 0.05,
+        desiredMarginRate: 0.15,
+        minPayoutMinor: 0,
+        maxQuantityPerRequest: 5,
+      },
+    });
+  }
+}
+
 async function main() {
   await seedPermissions();
   await seedTestUsers();
   const products = await seedCatalog();
   await seedInventory(products);
+  await seedBuybackRules();
 
   console.log("Seed complete.");
   console.log(`Test accounts (password: "${DEV_PASSWORD}"):`);

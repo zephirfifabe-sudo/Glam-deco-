@@ -28,3 +28,23 @@ export async function updateOrderStatus(
 ) {
   return tx.order.update({ where: { id }, data: { status } });
 }
+
+/**
+ * A customer's own past purchases, excluding orders that never
+ * completed (PENDING_PAYMENT) or that reversed (CANCELLED/REFUNDED) -
+ * the candidate pool for buyback.md's "sell back what you bought"
+ * flow. Eligibility (category rule, personalization) is a buyback
+ * service concern, not this repository's.
+ */
+export async function findPurchasedOrderItemsForUser(userId: string) {
+  return prisma.order.findMany({
+    where: {
+      userId,
+      status: { notIn: ["PENDING_PAYMENT", "CANCELLED", "REFUNDED"] },
+    },
+    include: {
+      items: { include: { productVariant: { include: { product: true } } } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}

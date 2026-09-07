@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 
 // Re-exported so the rest of the codebase can reference generated enum
 // types without importing "@prisma/client" directly (that import is
@@ -10,7 +10,16 @@ export type {
   EventType,
   ProductCondition,
   ProductStatus,
+  Condition,
+  InventoryStatus,
+  InventoryAcquisitionSource,
+  InventoryMovementType,
 } from "@prisma/client";
+
+// A Prisma interactive-transaction handle - the type callers need to
+// accept/pass a transaction without importing "@prisma/client"
+// themselves (used by server/services/inventory, later checkout/buyback).
+export type TransactionClient = Prisma.TransactionClient;
 
 // Next.js dev mode reloads modules on every change; without this
 // global-singleton guard each reload would open a fresh Prisma

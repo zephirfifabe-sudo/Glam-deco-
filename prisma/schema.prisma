@@ -53,6 +53,57 @@ enum ProductStatus {
   ARCHIVED
 }
 
+// Physical-unit condition (DATABASE.md §2) - distinct from
+// ProductCondition, which is the catalog-level NEW/USED split. Every
+// InventoryItem carries one of these regardless of its Product's
+// top-level condition.
+enum Condition {
+  NEW
+  LIKE_NEW
+  EXCELLENT
+  GOOD
+  FAIR
+  DAMAGED
+  INCOMPLETE
+  UNUSABLE
+  PENDING_INSPECTION
+}
+
+enum InventoryStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  RETURNED
+  INSPECTION
+  REPAIR
+  DAMAGED
+  LOST
+  DISPOSED
+}
+
+enum InventoryAcquisitionSource {
+  PURCHASE_ORDER
+  BUYBACK
+}
+
+// Append-only ledger entry types (DATABASE.md §11) - every status
+// change on an InventoryItem writes one of these, so stock state is
+// always reconstructable from history, never only from the mutable
+// `status` column.
+enum InventoryMovementType {
+  PURCHASE_RECEIVED
+  RESERVED
+  RELEASED
+  SOLD
+  RETURNED
+  BUYBACK_RECEIVED
+  INSPECTION_ACCEPTED
+  INSPECTION_REJECTED
+  ADJUSTMENT
+  DAMAGED
+  LOST
+}
+
 // --- Identity & access ---
 
 model User {
@@ -71,6 +122,7 @@ model User {
   verificationTokens VerificationToken[]
   addresses          Address[]
   consents           Consent[]
+  inventoryMovements InventoryMovement[]
 
   @@index([status])
 }
@@ -249,21 +301,89 @@ model ProductVariant {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  inventoryItems InventoryItem[]
+
   @@index([productId])
 }
 
-// Marketing photos for a Product, shared across all its NEW-condition
-// units. Once InventoryItem exists (Phase 4), used-condition units get
-// their own photos on InventoryItem instead (never these) - see
-// DATABASE.md §4/§6 for the "never both" invariant that introduces.
+// Belongs to a Product (marketing photos, shared across NEW-condition
+// units) OR to a specific InventoryItem (a used unit's own real
+// photos) - never both, never neither. Prisma has no portable
+// declarative XOR constraint, so this is enforced with a CHECK
+// constraint added by hand in the migration SQL (see
+// prisma/migrations/*_add_inventory) - DATABASE.md §4/§6.
 model ProductImage {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url       String
-  alt       String
-  position  Int      @default(0)
-  createdAt DateTime @default(now())
+  id              String         @id @default(cuid())
+  productId       String?
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  url             String
+  alt             String
+  position        Int            @default(0)
+  createdAt       DateTime       @default(now())
 
   @@index([productId])
+  @@index([inventoryItemId])
+}
+
+// --- Inventory ---
+
+model InventoryLocation {
+  id        String          @id @default(cuid())
+  name      String
+  code      String          @unique
+  items     InventoryItem[]
+  createdAt DateTime        @default(now())
+}
+
+// One physical, serialized unit - never a bare quantity counter
+// (DATABASE.md §10/§11). A Product/ProductVariant can have zero to
+// many of these; only an InventoryItem is ever actually allocated to
+// an order.
+model InventoryItem {
+  id                String                     @id @default(cuid())
+  productVariantId  String
+  productVariant    ProductVariant             @relation(fields: [productVariantId], references: [id])
+  serial            String                     @unique
+  condition         Condition
+  status            InventoryStatus            @default(AVAILABLE)
+  locationId        String
+  location          InventoryLocation          @relation(fields: [locationId], references: [id])
+  acquisitionSource InventoryAcquisitionSource @default(PURCHASE_ORDER)
+  costBasisMinor    Int?
+  // originBuybackItemId intentionally omitted for now - BuybackItem
+  // doesn't exist until Phase 6. Add the FK then, additively.
+  conditionNotes    String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  images    ProductImage[]
+  movements InventoryMovement[]
+
+  @@index([status])
+  @@index([productVariantId])
+}
+
+// Append-only - never updated or deleted, only inserted (DATABASE.md
+// §11/§12). This is the audit trail an InventoryItem.status change
+// must always be accompanied by; reference{Type,Id} is a deliberately
+// loose polymorphic pointer (Order/BuybackRequest/Adjustment) since
+// those targets don't all exist yet as FKs can enforce.
+model InventoryMovement {
+  id            String                @id @default(cuid())
+  itemId        String
+  item          InventoryItem         @relation(fields: [itemId], references: [id])
+  type          InventoryMovementType
+  fromStatus    InventoryStatus?
+  toStatus      InventoryStatus
+  actorId       String?
+  actor         User?                 @relation(fields: [actorId], references: [id])
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  createdAt     DateTime              @default(now())
+
+  @@index([itemId])
+  @@index([createdAt])
 }

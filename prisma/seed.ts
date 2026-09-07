@@ -188,7 +188,7 @@ async function seedCatalog() {
     },
   });
 
-  await prisma.product.upsert({
+  const guirlande = await prisma.product.upsert({
     where: { slug: "guirlande-ballons-pastel" },
     update: {},
     create: {
@@ -203,13 +203,65 @@ async function seedCatalog() {
     },
   });
 
-  return { arche };
+  return { arche, guirlande };
+}
+
+async function seedInventory(products: {
+  arche: { id: string };
+  guirlande: { id: string };
+}) {
+  const warehouse = await prisma.inventoryLocation.upsert({
+    where: { code: "WH-BXL-01" },
+    update: {},
+    create: { code: "WH-BXL-01", name: "Entrepôt Bruxelles" },
+  });
+
+  const archeVariant = await prisma.productVariant.findFirstOrThrow({
+    where: { productId: products.arche.id },
+  });
+  const guirlandeVariant = await prisma.productVariant.findFirstOrThrow({
+    where: { productId: products.guirlande.id },
+  });
+
+  // Exactly one unit of the arch - deliberately the "last unit" scenario
+  // used to demo/verify the concurrent-allocation guard (DATABASE.md §5).
+  await prisma.inventoryItem.upsert({
+    where: { serial: "ARCHE-0001" },
+    update: {},
+    create: {
+      serial: "ARCHE-0001",
+      productVariantId: archeVariant.id,
+      condition: "NEW",
+      status: "AVAILABLE",
+      locationId: warehouse.id,
+      acquisitionSource: "PURCHASE_ORDER",
+      costBasisMinor: 8000,
+    },
+  });
+
+  for (let i = 1; i <= 5; i += 1) {
+    const serial = `GUIRLANDE-${String(i).padStart(4, "0")}`;
+    await prisma.inventoryItem.upsert({
+      where: { serial },
+      update: {},
+      create: {
+        serial,
+        productVariantId: guirlandeVariant.id,
+        condition: "NEW",
+        status: "AVAILABLE",
+        locationId: warehouse.id,
+        acquisitionSource: "PURCHASE_ORDER",
+        costBasisMinor: 1500,
+      },
+    });
+  }
 }
 
 async function main() {
   await seedPermissions();
   await seedTestUsers();
-  await seedCatalog();
+  const products = await seedCatalog();
+  await seedInventory(products);
 
   console.log("Seed complete.");
   console.log(`Test accounts (password: "${DEV_PASSWORD}"):`);

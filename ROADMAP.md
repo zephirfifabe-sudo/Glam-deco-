@@ -65,12 +65,32 @@ form takes a plain image URL for now, and the seeded catalog ships
 with zero images, rendering the storefront's "no photo yet" fallback
 rather than pretend a photo pipeline exists.
 
-## Phase 4 — Inventory
+## Phase 4 — Inventory ✅ done
 
-InventoryItem/InventoryLocation/InventoryMovement; reservation +
-release logic; the row-locking allocation transaction and its
-concurrency test (DATABASE.md §5) — built and tested before checkout
-depends on it.
+InventoryItem/InventoryLocation/InventoryMovement (append-only ledger);
+reservation (`reserveOneUnit`/`reserveOneUnitInTx`) and release
+(`releaseUnit`/`releaseUnitInTx`) logic; the row-locking allocation
+transaction and its concurrency test (DATABASE.md §5) — built and
+tested before checkout depends on it. `reserveOneUnitInTx`/
+`releaseUnitInTx` deliberately take a caller-supplied transaction so
+Phase 5's checkout can reserve inventory and create the order in one
+atomic transaction rather than two.
+
+Uses `SELECT ... FOR UPDATE SKIP LOCKED` rather than a plain
+`FOR UPDATE`: with several units in stock, concurrent buyers each lock
+a _different_ row instead of queuing; with exactly one unit left (the
+documented race), the loser sees zero available-and-lockable rows and
+fails immediately with `InsufficientInventoryError` rather than
+blocking. The `ProductImage` "belongs to exactly one of
+Product/InventoryItem" invariant (DATABASE.md §4/§6) is enforced with
+a hand-added Postgres `CHECK` constraint, not just application code
+(brief §12) - verified directly against Postgres, not just asserted.
+
+The required concurrency test (brief §26/§68 Test 5) was verified to
+actually catch a regression, not just pass by construction: temporarily
+removing `FOR UPDATE SKIP LOCKED` was confirmed to make both tests fail
+(two buyers claiming the same last unit; 3 of 3 buyers succeeding
+against a 2-unit pool) before the real locking code was restored.
 
 ## Phase 5 — Cart + Checkout + Stripe
 

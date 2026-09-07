@@ -36,6 +36,28 @@ export class ValidationFailedError extends DomainError {
   }
 }
 
+// Raised when a row-locking allocation transaction finds no AVAILABLE
+// unit left for a variant (DATABASE.md §5 - the last-unit race
+// condition guard). Exactly one concurrent caller ever fails with this
+// for a given last unit; it is not a generic "not found".
+export class InsufficientInventoryError extends DomainError {
+  readonly code = "INSUFFICIENT_INVENTORY";
+
+  constructor(message = "Cet article n'est plus disponible.") {
+    super(message);
+  }
+}
+
+export class InvalidStateTransitionError extends DomainError {
+  readonly code = "INVALID_STATE_TRANSITION";
+
+  constructor(
+    message = "Cette opération n'est pas possible dans l'état actuel.",
+  ) {
+    super(message);
+  }
+}
+
 export function isDomainError(error: unknown): error is DomainError {
   return error instanceof DomainError;
 }

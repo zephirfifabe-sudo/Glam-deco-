@@ -106,10 +106,15 @@ hard gate, for the reason documented in that file.
   permission - seeded on the `ADMIN`/`SUPER_ADMIN` roles): product
   CRUD with variants/images, category and event-type management,
   server-side pagination.
+- **Inventory**: serialized `InventoryItem`s (never a bare stock
+  counter), an append-only movement ledger, and race-condition-safe
+  reservation/release (`server/services/inventory`) - see
+  `tests/integration/inventory-concurrency.test.ts` for the required
+  last-unit concurrency test.
 
 ## Known gaps at this stage of the project (tracked, not hidden)
 
-This repository is at the end of **Phase 3 - Catalog** (see
+This repository is at the end of **Phase 4 - Inventory** (see
 `ROADMAP.md`). Deliberately not yet built:
 
 - **Rate limiting** (SECURITY.md §8) - Redis is provisioned but no
@@ -133,6 +138,7 @@ This repository is at the end of **Phase 3 - Catalog** (see
   end-to-end - see the ADRs and `ROADMAP.md` for what that covered. Run
   `docker compose config` and `docker compose up` in a normal
   environment to confirm the compose file itself before relying on it.
-- Inventory/cart/checkout/buyback are Phase 4 onward - no purchase CTA
-  exists on product pages yet, deliberately, rather than ship a button
-  that does nothing.
+- Cart/checkout/buyback are Phase 5 onward - no purchase CTA exists on
+  product pages yet, deliberately, rather than ship a button that does
+  nothing. Catalog products aren't linked to any `InventoryItem` yet
+  either (that wiring happens when checkout needs it in Phase 5).

@@ -4,23 +4,23 @@ See `docs/adr/` for the reasoning behind each decision below.
 
 ## 1. Stack
 
-| Concern | Choice |
-|---|---|
-| Framework | Next.js (App Router), TypeScript strict |
-| UI | React, Tailwind CSS, small in-house design system (headless + Tailwind, e.g. Radix primitives under the hood for accessibility) |
-| Backend | Next.js Server Components / Server Actions / Route Handlers — no separate API server |
-| Database | PostgreSQL 16 |
-| ORM | Prisma (ADR-002) |
-| Validation | Zod, schemas colocated per feature, shared between client form and server action |
-| Auth | Auth.js v5 + Prisma adapter + Argon2id + custom TOTP MFA (ADR-003) |
-| Payments | Stripe (Checkout Sessions + webhooks) (ADR-004) |
-| Storage | S3-compatible, MinIO locally (ADR-006) |
-| Cache / rate limiting / locks | Redis |
-| Background work | Postgres-backed outbox table + a small worker process (`pnpm worker`) in the same repo, run as a separate container — avoids introducing a full queue broker before it's needed |
-| Email | Transactional email provider via a thin `lib/email` adapter (provider chosen at implementation time; templates rendered server-side with React Email or similar) |
-| Tests | Vitest (unit/integration), Playwright (E2E) |
-| Lint/format | ESLint, Prettier, Husky + lint-staged |
-| Infra | Docker, Docker Compose (dev: app, postgres, redis, minio, mailhog) |
+| Concern                       | Choice                                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework                     | Next.js (App Router), TypeScript strict                                                                                                                                         |
+| UI                            | React, Tailwind CSS, small in-house design system (headless + Tailwind, e.g. Radix primitives under the hood for accessibility)                                                 |
+| Backend                       | Next.js Server Components / Server Actions / Route Handlers — no separate API server                                                                                            |
+| Database                      | PostgreSQL 16                                                                                                                                                                   |
+| ORM                           | Prisma (ADR-002)                                                                                                                                                                |
+| Validation                    | Zod, schemas colocated per feature, shared between client form and server action                                                                                                |
+| Auth                          | Auth.js v5 + Prisma adapter + Argon2id + custom TOTP MFA (ADR-003)                                                                                                              |
+| Payments                      | Stripe (Checkout Sessions + webhooks) (ADR-004)                                                                                                                                 |
+| Storage                       | S3-compatible, MinIO locally (ADR-006)                                                                                                                                          |
+| Cache / rate limiting / locks | Redis                                                                                                                                                                           |
+| Background work               | Postgres-backed outbox table + a small worker process (`pnpm worker`) in the same repo, run as a separate container — avoids introducing a full queue broker before it's needed |
+| Email                         | Transactional email provider via a thin `lib/email` adapter (provider chosen at implementation time; templates rendered server-side with React Email or similar)                |
+| Tests                         | Vitest (unit/integration), Playwright (E2E)                                                                                                                                     |
+| Lint/format                   | ESLint, Prettier, Husky + lint-staged                                                                                                                                           |
+| Infra                         | Docker, Docker Compose (dev: app, postgres, redis, minio, mailhog)                                                                                                              |
 
 ## 2. Layering
 
@@ -36,6 +36,7 @@ UI (Server/Client Components)
 ```
 
 Rules:
+
 - `server/domain/**` has **zero** imports from `next`, `react`, `@prisma/client`, or any I/O library. It is pure functions and classes, unit-tested without a database.
 - Only `server/repositories/**` imports `@prisma/client`.
 - `features/**` (Server Actions, forms) never talks to Prisma or Stripe directly — always through a service.
@@ -99,8 +100,8 @@ for the entities each module owns.
 ## 5. Product vs InventoryItem
 
 Enforced everywhere: `Product`/`ProductVariant` is the sellable
-*description* (marketing content, base price, category). `InventoryItem`
-is one *physical unit* (condition, location, status, photos when used,
+_description_ (marketing content, base price, category). `InventoryItem`
+is one _physical unit_ (condition, location, status, photos when used,
 NEW vs USED). A `Product` can have 0..n `InventoryItem`s. Cart/Order
 lines reference a `ProductVariant` **and**, at allocation time, a
 specific reserved `InventoryItem`. New-condition items share the
@@ -121,12 +122,12 @@ product's marketing photos; used items always carry their own photo set
   records — state is always derivable/auditable from the ledger, never
   only from a mutable counter.
 - Stripe webhook processing is idempotent via a unique `(provider,
-  eventId)` constraint (ADR-004).
+eventId)` constraint (ADR-004).
 
 ## 7. Cross-cutting concerns
 
 - **Permissions**: centralized `PermissionService.can(actor, permission,
-  resource?)`, called at the top of every Server Action / Route Handler
+resource?)`, called at the top of every Server Action / Route Handler
   / Server Component that touches non-public data. No scattered
   `role === "ADMIN"` checks (brief §16).
 - **Errors**: typed domain errors (`InsufficientInventoryError`,
@@ -136,7 +137,7 @@ product's marketing photos; used items always carry their own photo set
   stack traces never reach the browser.
 - **Logging**: structured JSON logs (`lib/logging`), one event schema
   (`level, event, actorId, resourceType, resourceId, timestamp,
-  metadata`), never raw `console.log(user)`.
+metadata`), never raw `console.log(user)`.
 - **Audit**: sensitive mutations additionally write an `AuditLog` row
   (see SECURITY.md).
 

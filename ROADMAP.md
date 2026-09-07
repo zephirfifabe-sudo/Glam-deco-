@@ -5,15 +5,18 @@ before the next starts (brief §123/§127 Definition of Done applies per
 feature, not just per phase).
 
 ## Phase 0 — Audit (this pass)
+
 `PROJECT_AUDIT.md`. Done.
 
 ## Phase 1 — Architecture (this pass)
+
 `ARCHITECTURE.md`, `DATABASE.md`, `THREAT_MODEL.md`, `BUYBACK.md`,
 `SECURITY.md`, `ROADMAP.md`, ADRs 001–006. **Gate: human validation
 before any code is written** — this is an explicit rule in the brief
 (§129), not a formality skipped by "auto mode."
 
-## Phase 2 — Foundation
+## Phase 2 — Foundation ✅ done
+
 Next.js + TypeScript strict + Tailwind scaffold; Docker Compose
 (app, postgres, redis, minio, mailhog); Prisma schema for
 Identity/Catalog/base entities + first migration; Auth.js wired
@@ -21,7 +24,19 @@ Identity/Catalog/base entities + first migration; Auth.js wired
 Zod validation conventions; `PermissionService` skeleton; health
 endpoint; CI pipeline skeleton (lint/typecheck/unit/build).
 
+Verified live against a real PostgreSQL instance and a real browser
+(Playwright): signup → email verification → login → logout → password
+reset request → password reset → login with the new password → old
+password correctly rejected, with the session-revocation ledger
+(ADR-003) confirmed in the database after both logout and reset. The
+`docker-compose.yml`/`Dockerfile` were written and `docker compose
+config` validated, but full `docker compose up` could not be exercised
+in this session's sandbox (no reachable Docker daemon) - see README.md
+"Known gaps." Rate limiting and MFA are explicitly deferred to Phase 8,
+as scoped below, not silently skipped.
+
 ## Phase 3 — Catalog
+
 Category/EventType/Tag/Product/ProductVariant/ProductImage CRUD
 (admin) + public browse/search/filter (Postgres full-text to start,
 architecture leaves room for Meilisearch/OpenSearch later per brief
@@ -30,12 +45,14 @@ distinction (DATABASE.md §4) implemented end-to-end for at least one
 category, since it's structurally load-bearing for buyback later.
 
 ## Phase 4 — Inventory
+
 InventoryItem/InventoryLocation/InventoryMovement; reservation +
 release logic; the row-locking allocation transaction and its
 concurrency test (DATABASE.md §5) — built and tested before checkout
 depends on it.
 
 ## Phase 5 — Cart + Checkout + Stripe
+
 Cart (server-recomputed pricing only), checkout flow, Stripe Checkout
 Session creation, webhook handler with signature verification +
 idempotent `PaymentEvent`, Order state machine, order confirmation +
@@ -43,6 +60,7 @@ tracking pages. E2E: signup → purchase → Stripe test payment → webhook
 → order marked paid; plus the last-unit concurrent-purchase test.
 
 ## Phase 6 — Buyback (MVP slice)
+
 BuybackRequest/BuybackItem submission with pre-estimate
 (BuybackValuationService v1 + a first set of BuybackRule rows),
 shipment-back tracking, Inspection UI for INSPECTOR role, valuation
@@ -54,23 +72,27 @@ E2E: buyback submit → inspect → accept/reject per item → payout →
 item resellable.
 
 ## Phase 7 — Admin back-office
+
 Dashboard (orders/stock/buyback/payment KPIs), full catalog/inventory
 CRUD, buyback/inspection/payout management with maker-checker,
 user/role management, fraud queue, audit log viewer — all with
 server-side pagination/filtering (brief §80).
 
 ## Phase 8 — Security hardening pass
+
 Dedicated review across: auth, authorization/IDOR, CSRF, XSS, SQLi,
 uploads, rate limiting, secrets, Stripe/webhooks, logging — against
 `THREAT_MODEL.md` and `SECURITY.md` as the checklist, with the security
 test suite from SECURITY.md §13 written and passing.
 
 ## Phase 9 — Testing
+
 Full lint/typecheck/unit/integration/E2E/security suite green; the
 race-condition, webhook-idempotency, and IDOR tests are explicitly
 verified, not just present.
 
 ## Phase 10 — Production readiness
+
 `PRODUCTION_CHECKLIST.md` (security, payments, database, infra, legal
 sign-off gates) verified before go-live.
 

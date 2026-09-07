@@ -1,9 +1,11 @@
 # ADR-001: Modular monolith over microservices
 
 ## Status
+
 Accepted
 
 ## Context
+
 The platform has many business domains (catalog, inventory, cart,
 checkout, buyback, inspection, payouts, fraud, notifications, admin) that
 in a large org might eventually become separate services. The team size
@@ -13,8 +15,9 @@ discovery, cross-service auth, multiple deploy pipelines, network
 failure modes.
 
 ## Decision
+
 Build a **single Next.js application** (modular monolith). Enforce
-module boundaries at the *code* level, not the network level:
+module boundaries at the _code_ level, not the network level:
 
 - `server/domain/<module>` — pure business logic, framework-agnostic,
   no imports from `next/*` or React.
@@ -32,6 +35,7 @@ services possible (each `server/services/<module>` + its repository
 becomes the seam) without paying the distributed-systems tax today.
 
 ## Consequences
+
 - One deploy, one database, one transaction boundary → correctness is
   much easier to guarantee for money/inventory operations (see
   ADR-002/DATABASE.md on using real DB transactions for checkout and
@@ -44,6 +48,7 @@ becomes the seam) without paying the distributed-systems tax today.
   off because its service/repository boundary is already explicit.
 
 ## Alternatives considered
+
 - **Microservices from day one**: rejected — premature, would slow down
   a single-team MVP and multiply the attack surface without a
   corresponding traffic/organizational need.

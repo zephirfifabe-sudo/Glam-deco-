@@ -1,13 +1,16 @@
 # ADR-004: Stripe as sole payment provider, PaymentIntents + webhooks
 
 ## Status
+
 Accepted
 
 ## Context
+
 Stripe is mandated. Belgium launch, EU expansion planned. Card data must
 never touch our servers.
 
 ## Decision
+
 - Use **Stripe PaymentIntents** (via Stripe Elements or Checkout Session
   — Checkout Session chosen for MVP to minimize PCI scope and custom UI
   work; can move to embedded Elements later for a more branded flow).
@@ -47,6 +50,7 @@ never touch our servers.
   decision; not the same code path as taking payment for orders.
 
 ## Consequences
+
 - No cardholder data ever stored — reduces PCI scope to SAQ A.
 - Webhook idempotency table gives us replay-safety and an audit trail
   of every Stripe event received, independent of Stripe's own dashboard.
@@ -54,6 +58,7 @@ never touch our servers.
   `listen --forward-to` for local dev, documented in DEPLOYMENT.md).
 
 ## Alternatives considered
+
 - **Trusting the client-side redirect to mark orders paid**: rejected
   outright — this is the single most common payment-integration
   vulnerability (a user can hit the success URL without ever paying).

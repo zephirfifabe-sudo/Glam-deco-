@@ -71,8 +71,12 @@ ne doivent pas être de simples chaînes arbitraires").
 ## 3. Entity groups
 
 ### Identity & access
+
 `User` (email, hashed password, emailVerifiedAt, name, status
-[ACTIVE/SUSPENDED/BANNED]), `MfaSecret`, `Session`, `VerificationToken`
+[ACTIVE/SUSPENDED/BANNED]), `MfaSecret`, `Session` (our own revocation
+ledger, not the Auth.js adapter's default shape — `jti` unique,
+`userId`, `expiresAt`, `revokedAt` nullable, `userAgent`, `ip`; checked
+on every request per ADR-003's JWT-plus-ledger design), `VerificationToken`
 (email verify / password reset, stores a hash of the token, `purpose`,
 `expiresAt`, `consumedAt`), `UserRole` (join: user↔role, supports
 multiple roles per staff member), `Permission`, `RolePermission`,
@@ -80,6 +84,7 @@ multiple roles per staff member), `Permission`, `RolePermission`,
 (GDPR consent records: purpose, grantedAt, revokedAt, source).
 
 ### Catalog
+
 `Category` (tree via `parentId`), `EventType` (Mariage, Baby Shower,
 Anniversaire, ...), `Tag`, `Product` (slug, title, description,
 basePriceMinor, currency, `condition: ProductCondition`, categoryId,
@@ -89,6 +94,7 @@ own SKU and price override), `ProductImage` (belongs to Product **or**
 to a specific InventoryItem — never both; see §6).
 
 ### Inventory
+
 `InventoryLocation` (warehouse/zone), `InventoryItem` (productVariantId,
 serial/label, `condition`, `status: InventoryStatus`, locationId,
 acquisitionSource [PURCHASE_ORDER/BUYBACK], costBasisMinor,
@@ -100,6 +106,7 @@ append-only: it is the ledger the brief requires instead of a bare
 `stock` counter (§11).
 
 ### Cart & Pricing
+
 `Cart` (userId nullable for guest carts via session), `CartItem`
 (productVariantId, quantity — **no price stored client-side**; price is
 always recomputed server-side at checkout from current
@@ -107,6 +114,7 @@ always recomputed server-side at checkout from current
 (code, rules, usage limits, expiry).
 
 ### Orders & Payments
+
 `Order` (userId, status: OrderStatus, subtotalMinor, taxMinor,
 shippingMinor, totalMinor, currency, shippingAddressId,
 billingAddressId), `OrderItem` (orderId, productVariantId,
@@ -117,16 +125,19 @@ provider, `eventId` unique per provider — enforces webhook idempotency,
 type, payloadHash, receivedAt, appliedAt).
 
 ### Shipping
+
 `Shipment` (orderId, carrier, trackingNumber, status), `ShipmentItem`
 (shipmentId, orderItemId), `ShipmentEvent` (shipmentId, status,
 occurredAt, raw carrier payload), `ShippingRate`, `Package` (weight,
 dimensions).
 
 ### Returns (customer return — distinct from Buyback)
+
 `Return` (orderId, userId, reason, status), `ReturnItem` (returnId,
 orderItemId, quantity, resolution [REFUND/REPLACEMENT]).
 
 ### Buyback
+
 `BuybackRequest` (userId, status: BuybackStatus, submittedAt,
 addressId — pickup/return address), `BuybackItem` (requestId,
 productVariantId, declaredCondition, declaredNotes, customerPhotos[],
@@ -138,23 +149,27 @@ conditionMultiplier, seasonMultiplier, demandMultiplier, minPayoutMinor,
 maxPayoutMinor, maxQuantityPerRequest, active).
 
 ### Inspection
+
 `Inspection` (buybackItemId 1:1, inspectorId, receivedQuantity,
 expectedQuantity, declaredCondition [copied], observedCondition,
 defects[], missingParts[], inspectionPhotos[], proposedValueMinor,
 discrepancyFlag boolean, discrepancyNotes, completedAt).
 
 ### Payouts
+
 `Payout` (buybackRequestId, userId, status: PayoutStatus, amountMinor,
 method [BANK_TRANSFER/STRIPE], destinationRef), `PayoutEvent` (payoutId,
 type, occurredAt, raw provider payload where applicable).
 
 ### Trust & Fraud
+
 `TrustScoreSnapshot` (userId, score, computedAt, signals JSON — see
 BUYBACK.md §Trust Score for what feeds it and its limits),
 `FraudSignal` (userId or orderId or buybackId, type, severity,
 detectedAt, status [OPEN/REVIEWED/DISMISSED/CONFIRMED], reviewerId).
 
 ### Reviews, Notifications, Admin, Audit
+
 `Review` (productId, userId, rating, body, verifiedPurchase boolean),
 `Notification` (userId, type, payload, status [PENDING/SENT/FAILED],
 attempts — outbox pattern, see ARCHITECTURE.md §Background work),
@@ -187,6 +202,7 @@ checkout simultaneously.
 Guarantee: exactly one allocation succeeds.
 
 Mechanism:
+
 ```sql
 BEGIN;
 SELECT id FROM "InventoryItem"
@@ -198,6 +214,7 @@ INSERT INTO "InventoryMovement" (...) VALUES (...);
 -- create/attach OrderItem
 COMMIT;
 ```
+
 Run via a Prisma interactive transaction (`prisma.$transaction(async
 (tx) => { ... })`) with `$queryRaw`/`$executeRaw` (parameterized) for
 the `SELECT ... FOR UPDATE`. A required integration test starts two

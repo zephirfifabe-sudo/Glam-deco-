@@ -1,9 +1,11 @@
 # ADR-005: Buyback as a first-class domain, decoupled from Orders/Returns
 
 ## Status
+
 Accepted
 
 ## Context
+
 Buyback (customer sells a used item back to the platform) is the
 product's differentiator. It must not be modeled as a variant of
 "returns" (a return is "I didn't want this / it's defective, refund
@@ -12,6 +14,7 @@ machines, and different actors (return: customer + support; buyback:
 customer + inspector + finance + warehouse).
 
 ## Decision
+
 Model **Return** and **Buyback** as fully separate aggregates
 (`Return`/`ReturnItem` vs `BuybackRequest`/`BuybackItem`), each with its
 own state machine (see BUYBACK.md, DATABASE.md).
@@ -46,6 +49,7 @@ before a new `InventoryItem` becomes purchasable again — never an
 automatic "accepted buyback = instantly for sale" shortcut.
 
 ## Consequences
+
 - Two independent state machines to implement and test, more upfront
   modeling work, but correct separation of concerns and audit trail.
 - The valuation formula/coefficients live in one service + one rules
@@ -56,6 +60,7 @@ automatic "accepted buyback = instantly for sale" shortcut.
   and money out are never the same ledger row.
 
 ## Alternatives considered
+
 - **Treat buyback as a "negative order"**: rejected — conflates two
   different state machines and actor sets, would force awkward status
   values ("refunded" meaning two different things).

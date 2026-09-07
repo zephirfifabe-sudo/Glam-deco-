@@ -6,7 +6,10 @@ Business correctness > Reliability > Testability > Performance > UX >
 Visual polish.**
 
 ## 1. Authentication
-See ADR-003. Argon2id, Auth.js database sessions, mandatory MFA (TOTP)
+
+See ADR-003. Argon2id, Auth.js JWT sessions backed by a server-side
+revocation ledger (checked on every request, so revocation is
+immediate), mandatory MFA (TOTP)
 for staff roles, email verification, single-use hashed
 reset/verification tokens, session revocation on demand, step-up
 re-auth for sensitive admin actions.
@@ -34,16 +37,16 @@ admin.access
 Default role→permission matrix (starting point, refined during
 implementation):
 
-| Role | Key permissions |
-|---|---|
-| CUSTOMER | own orders/buybacks/addresses only (ownership check, not a permission grant) |
-| SUPPORT | order.read, buyback.read, user.read (limited fields) |
-| INSPECTOR | buyback.read, buyback.inspect (own queue) |
-| WAREHOUSE | inventory.read, inventory.write |
-| FINANCE | payout.create, payout.approve (maker-checker split — see §9), refund.create |
-| MANAGER | product.write, order.manage, buyback.approve, fraud.review |
-| ADMIN | admin.access + most of the above |
-| SUPER_ADMIN | all, including role management and kill switches |
+| Role        | Key permissions                                                              |
+| ----------- | ---------------------------------------------------------------------------- |
+| CUSTOMER    | own orders/buybacks/addresses only (ownership check, not a permission grant) |
+| SUPPORT     | order.read, buyback.read, user.read (limited fields)                         |
+| INSPECTOR   | buyback.read, buyback.inspect (own queue)                                    |
+| WAREHOUSE   | inventory.read, inventory.write                                              |
+| FINANCE     | payout.create, payout.approve (maker-checker split — see §9), refund.create  |
+| MANAGER     | product.write, order.manage, buyback.approve, fraud.review                   |
+| ADMIN       | admin.access + most of the above                                             |
+| SUPER_ADMIN | all, including role management and kill switches                             |
 
 All checks go through one `PermissionService.can(actor, permission,
 resource?)` (`lib/permissions`), called at the top of every Server
@@ -55,7 +58,7 @@ data. No scattered `if (user.role === "ADMIN")` checks (brief §16).
 Every fetch-by-ID of a non-public resource (`orders`, `buybacks`,
 `payouts`, `returns`, `addresses`, `uploads`, `invoices`) checks
 **ownership OR explicit permission**, server-side, on every call — never
-inferred from the fact that the client only *shows* a link to owned
+inferred from the fact that the client only _shows_ a link to owned
 resources. Non-sequential IDs reduce blind enumeration but are not
 treated as an authorization control (brief §14/§17).
 
@@ -98,18 +101,18 @@ are locked in during implementation.
 
 ## 8. Rate limiting (Redis-backed, configurable)
 
-| Endpoint class | Posture |
-|---|---|
-| login | strict, keyed on email+IP |
-| signup | strict, keyed on IP |
-| password reset request | strict, keyed on email (not IP-only, to avoid a single email being the sole gate to lockout) |
-| email verification resend | strict |
-| checkout | medium |
-| coupon validation | medium |
-| buyback submission | medium |
-| payout requests (staff) | strict |
-| admin endpoints | strict |
-| catalog browsing/search | generous |
+| Endpoint class            | Posture                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| login                     | strict, keyed on email+IP                                                                    |
+| signup                    | strict, keyed on IP                                                                          |
+| password reset request    | strict, keyed on email (not IP-only, to avoid a single email being the sole gate to lockout) |
+| email verification resend | strict                                                                                       |
+| checkout                  | medium                                                                                       |
+| coupon validation         | medium                                                                                       |
+| buyback submission        | medium                                                                                       |
+| payout requests (staff)   | strict                                                                                       |
+| admin endpoints           | strict                                                                                       |
+| catalog browsing/search   | generous                                                                                     |
 
 No mechanism allows a stranger who only knows a victim's email to
 permanently lock that account (brief §46) — friction/backoff, not a

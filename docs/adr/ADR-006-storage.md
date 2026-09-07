@@ -1,14 +1,17 @@
 # ADR-006: S3-compatible object storage with private buckets + signed URLs
 
 ## Status
+
 Accepted
 
 ## Context
+
 Uploads (product images, buyback photos, inspection photos) are
 user-hostile input by default (brief §42/§43) and must never be served
 directly from user-controlled paths or executed.
 
 ## Decision
+
 - Use an **S3-compatible object store**: AWS S3 (or Cloudflare R2) in
   production, **MinIO** in Docker Compose for local development — same
   S3 API in both, so the storage client code is identical across envs.
@@ -43,6 +46,7 @@ directly from user-controlled paths or executed.
      THREAT_MODEL.md, "malicious upload").
 
 ## Consequences
+
 - No uploaded file is ever served at a guessable/static path with its
   original name or extension.
 - Access to sensitive photos is always mediated by a server-side
@@ -51,6 +55,7 @@ directly from user-controlled paths or executed.
   abstraction (`lib/storage`), swappable via env config only.
 
 ## Alternatives considered
+
 - **Storing files in Postgres (bytea)**: rejected — wrong tool, bloats
   the DB, no CDN story.
 - **Directly public bucket for all uploads**: rejected — violates

@@ -13,6 +13,7 @@ DRAFT -> SUBMITTED -> PRE_ESTIMATE -> AWAITING_SHIPMENT -> RECEIVED
 ACCEPTED/PARTIALLY_ACCEPTED -> PAYOUT_PENDING -> PAID
 PAID -> RECONDITIONING -> AVAILABLE_FOR_RESALE
 ```
+
 Transitions are enforced by `server/domain/buyback/stateMachine.ts` — a
 lookup table of `{from, to, guard}`; any transition not in the table
 throws `InvalidStateTransitionError`. `CANCELLED` is reachable from any
@@ -68,12 +69,13 @@ category-level cost estimates (admin-configurable, not hardcoded —
 brief §32/§33).
 
 **Two distinct numbers are always shown, never conflated:**
+
 - **Pre-estimate** (`preEstimateMinMinor`/`preEstimateMaxMinor`): shown
   before the customer ships anything, explicitly labeled indicative
   ("Estimation indicative : 30–40 €"), computed from the customer's
   self-declared condition.
 - **Final value** (`finalValueMinor`): computed after inspection from
-  the *observed* condition, explicitly labeled definitive ("Valeur
+  the _observed_ condition, explicitly labeled definitive ("Valeur
   définitive après inspection : 34 €"), requires customer confirmation
   before payout (`CUSTOMER_CONFIRMATION` state) unless the customer has
   pre-authorized auto-accept within a tolerance band (future
@@ -101,6 +103,7 @@ feeds TrustScore and fraud signals — it is never silently discarded
 `duplicateAccountSignals`, `suspiciousActivityFlags`.
 
 Guardrails (brief §37, taken seriously):
+
 - The score is **one input to a manual/automated review threshold**,
   never an auto-ban or auto-reject trigger on its own.
 - Signals used are behavioral (accuracy, disputes), never demographic —
@@ -117,7 +120,7 @@ Guardrails (brief §37, taken seriously):
 
 ## 7. Payout
 
-Separate from the Stripe payment used to *buy* items (ADR-004).
+Separate from the Stripe payment used to _buy_ items (ADR-004).
 `PayoutService` manages `PENDING → PROCESSING → PAID/FAILED/CANCELLED`.
 Created only after `CUSTOMER_CONFIRMATION` is accepted, in the same
 transaction as the `BuybackItem`/`BuybackRequest` status update that
@@ -133,6 +136,7 @@ authorized staff member releases the payout (brief §41/§82/§102).
 BUYBACK item ACCEPTED -> RECONDITIONING -> QUALITY_CHECK -> PHOTOS
                        -> PRICING -> new InventoryItem AVAILABLE
 ```
+
 A new `InventoryItem` (acquisitionSource = BUYBACK, condition set from
 final inspection outcome after any repair, own photo set — never
 inherits the original product's marketing photos, DATABASE.md §4) is

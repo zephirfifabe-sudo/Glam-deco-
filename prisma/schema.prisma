@@ -1,0 +1,269 @@
+// Phase 2 (Foundation) scope: Identity & access + Catalog base entities.
+// See DATABASE.md for the full target model - later phases add Inventory,
+// Cart/Orders/Payments, Shipping, Returns, Buyback, Inspection, Payouts,
+// Fraud, Reviews, Notifications, Audit as their own migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- Enums ---
+
+enum Role {
+  CUSTOMER
+  SUPPORT
+  INSPECTOR
+  WAREHOUSE
+  FINANCE
+  MANAGER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum AddressType {
+  SHIPPING
+  BILLING
+}
+
+enum VerificationTokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum ProductCondition {
+  NEW
+  USED
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// --- Identity & access ---
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  name            String?
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  roles              UserRoleAssignment[]
+  sessions           Session[]
+  mfaSecret          MfaSecret?
+  verificationTokens VerificationToken[]
+  addresses          Address[]
+  consents           Consent[]
+
+  @@index([status])
+}
+
+// Our own revocation ledger, deliberately not the Auth.js adapter's
+// default Session shape - see ADR-003 (JWT-plus-ledger design). The
+// jti is embedded in the signed JWT at sign-in; every authenticated
+// request looks this row up to confirm the session hasn't been revoked.
+model Session {
+  id        String    @id @default(cuid())
+  jti       String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// TOTP secret, encrypted at rest with MFA_ENCRYPTION_KEY (see .env.example).
+// Recovery codes are stored as a hashed array, single-use.
+model MfaSecret {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  encryptedSecret    String
+  recoveryCodeHashes String[]
+  createdAt          DateTime  @default(now())
+  confirmedAt        DateTime?
+}
+
+// Single-use, short-lived tokens for email verification and password
+// reset. Only a hash of the token is stored - the raw token exists only
+// in the emailed link and is never persisted (brief SECURITY.md §1).
+model VerificationToken {
+  id         String                   @id @default(cuid())
+  userId     String
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String                   @unique
+  purpose    VerificationTokenPurpose
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime                 @default(now())
+
+  @@index([userId, purpose])
+}
+
+model UserRoleAssignment {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role
+
+  @@unique([userId, role])
+  @@index([role])
+}
+
+// Permission keys are strings ("order.read", "buyback.inspect", ...) so
+// new permissions can be introduced without a schema migration; the
+// role -> permission mapping is admin-editable data, not hardcoded
+// conditionals (see SECURITY.md §2, PermissionService).
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique
+  description String
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  role         Role
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+}
+
+model Address {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       AddressType
+  fullName   String
+  line1      String
+  line2      String?
+  postalCode String
+  city       String
+  country    String // ISO 3166-1 alpha-2, "BE" at launch
+  phone      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId])
+}
+
+// GDPR consent records - explicit, timestamped, revocable (brief §78).
+model Consent {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   String // e.g. "marketing_email", "analytics_cookies"
+  grantedAt DateTime  @default(now())
+  revokedAt DateTime?
+  source    String // e.g. "signup_form", "cookie_banner"
+
+  @@index([userId])
+}
+
+// --- Catalog ---
+
+model Category {
+  id       String     @id @default(cuid())
+  slug     String     @unique
+  name     String
+  parentId String?
+  parent   Category?  @relation("CategoryToParent", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryToParent")
+  products Product[]
+
+  @@index([parentId])
+}
+
+model EventType {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Tag {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Product {
+  id                             String           @id @default(cuid())
+  slug                           String           @unique
+  title                          String
+  description                    String
+  basePriceMinor                 Int
+  currency                       String           @default("EUR")
+  condition                      ProductCondition
+  status                         ProductStatus    @default(DRAFT)
+  categoryId                     String
+  category                       Category         @relation(fields: [categoryId], references: [id])
+  eventTypes                     EventType[]
+  tags                           Tag[]
+  personalizationRequired        Boolean          @default(false)
+  // Buyback eligibility defaults to false for anything personalizable -
+  // see BUYBACK.md §3. An admin flips this per product for exceptions.
+  personalizationBuybackEligible Boolean          @default(false)
+  createdAt                      DateTime         @default(now())
+  updatedAt                      DateTime         @updatedAt
+
+  variants ProductVariant[]
+  images   ProductImage[]
+
+  @@index([categoryId])
+  @@index([createdAt])
+}
+
+model ProductVariant {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku        String   @unique
+  name       String // e.g. "Blanc / 2m"
+  priceMinor Int? // overrides Product.basePriceMinor when set
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([productId])
+}
+
+// Marketing photos for a Product, shared across all its NEW-condition
+// units. Once InventoryItem exists (Phase 4), used-condition units get
+// their own photos on InventoryItem instead (never these) - see
+// DATABASE.md §4/§6 for the "never both" invariant that introduces.
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}

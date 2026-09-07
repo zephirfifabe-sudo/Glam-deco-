@@ -1,13 +1,16 @@
 # ADR-002: PostgreSQL + Prisma
 
 ## Status
+
 Accepted
 
 ## Context
+
 The brief mandates PostgreSQL as the source of truth and asks for a
 choice between Prisma and Drizzle, justified.
 
 Requirements that matter for this choice:
+
 - Strong migration history (schema changes are frequent early on, and
   must be reviewable and reversible).
 - Real DB transactions with row locking for race-condition-sensitive
@@ -18,9 +21,11 @@ Requirements that matter for this choice:
 - Strict TypeScript types generated from the schema, not hand-maintained.
 
 ## Decision
+
 Use **PostgreSQL 16** with **Prisma ORM** (`prisma` + `@prisma/client`).
 
 Rationale over Drizzle:
+
 - **Migration workflow**: `prisma migrate dev` / `migrate deploy`
   produces a reviewable, ordered SQL migration history out of the box,
   which matches the brief's "toutes les modifications de schéma passent
@@ -53,6 +58,7 @@ with indexes + pagination rather than exotic dynamic SQL, this is an
 acceptable trade-off.
 
 ## Consequences
+
 - All schema changes go through `prisma/schema.prisma` +
   `prisma migrate`. No manual DDL against production.
 - Repositories (`server/repositories/*`) are the only files that import
@@ -62,6 +68,7 @@ acceptable trade-off.
   tested (see the race-condition test in `TESTING` strategy).
 
 ## Alternatives considered
+
 - **Drizzle ORM**: strong candidate, rejected only on the migration
   maturity / schema-as-documentation trade-off above, not on
   correctness — revisit if the team later needs SQL-level control more

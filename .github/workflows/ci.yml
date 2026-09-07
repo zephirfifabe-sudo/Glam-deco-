@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A build is not valid if lint/typecheck/tests fail (brief §74/§127) -
+# every step is a hard gate except the final audit step, which is a
+# documented, deliberate exception: see its own comment below.
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: glamdeco
+          POSTGRES_PASSWORD: glamdeco
+          POSTGRES_DB: glamdeco
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U glamdeco -d glamdeco"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://glamdeco:glamdeco@localhost:5432/glamdeco?schema=public
+      DIRECT_URL: postgresql://glamdeco:glamdeco@localhost:5432/glamdeco?schema=public
+      AUTH_SECRET: ci-only-secret-not-a-real-value
+      MFA_ENCRYPTION_KEY: Y2ktb25seS1rZXktbm90LWEtcmVhbC12YWx1ZQ==
+      STRIPE_SECRET_KEY: sk_test_ci_placeholder
+      STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
+      STORAGE_ENDPOINT: http://localhost:9000
+      STORAGE_REGION: eu-central-1
+      STORAGE_ACCESS_KEY: ci
+      STORAGE_SECRET_KEY: ci-placeholder
+      STORAGE_BUCKET_PRIVATE: glamdeco-private
+      STORAGE_BUCKET_PUBLIC: glamdeco-public
+      EMAIL_API_KEY: ci-placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Apply database migrations
+        run: npm run db:migrate:deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit + integration tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Dependency audit (high/critical)
+        run: npm audit --audit-level=high
+        continue-on-error: true # tracked separately - see ADR-002/SECURITY.md known-issue notes, not silently ignored

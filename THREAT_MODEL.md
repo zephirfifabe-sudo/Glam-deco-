@@ -4,6 +4,7 @@ Format per asset: Threat / Attack Vector / Likelihood / Impact /
 Mitigation / Detection / Recovery.
 
 ## 1. Account takeover
+
 - **Vector**: credential stuffing, phishing, weak passwords, session
   fixation.
 - **Likelihood**: High (public signup, e-commerce = attractive target).
@@ -21,6 +22,7 @@ Mitigation / Detection / Recovery.
   that account.
 
 ## 2. IDOR / broken access control
+
 - **Vector**: `GET /api/orders/<id>`, `/buybacks/<id>`, `/payouts/<id>`,
   `/addresses/<id>`, uploaded file URLs — enumerating or guessing IDs of
   another user's resources.
@@ -41,6 +43,7 @@ Mitigation / Detection / Recovery.
   accessed (breach assessment).
 
 ## 3. Admin/back-office compromise
+
 - **Vector**: phished staff credentials, insider threat, weak admin
   session hygiene.
 - **Likelihood**: Medium (smaller user base, but high value target).
@@ -58,6 +61,7 @@ Mitigation / Detection / Recovery.
   audit trail review to assess damage.
 
 ## 4. Payment fraud
+
 - **Vector**: stolen cards, chargeback fraud, price manipulation from
   the client, coupon abuse, duplicate payment/payout.
 - **Likelihood**: Medium-High at scale.
@@ -74,6 +78,7 @@ Mitigation / Detection / Recovery.
   card/device fingerprint if available via Stripe Radar data.
 
 ## 5. Webhook forgery / replay
+
 - **Vector**: POST to `/api/webhooks/stripe` without a valid signature;
   replaying a captured legitimate payload.
 - **Likelihood**: Medium (endpoint is public by necessity).
@@ -91,6 +96,7 @@ Mitigation / Detection / Recovery.
   for any affected orders.
 
 ## 6. Inventory manipulation
+
 - **Vector**: race condition on last unit (§26), direct manipulation of
   `status` without a ledger entry, admin bulk action abuse.
 - **Likelihood**: Medium.
@@ -106,6 +112,7 @@ Mitigation / Detection / Recovery.
   adjustment with an `ADJUSTMENT` movement (never a silent edit).
 
 ## 7. Buyback fraud
+
 - **Vector**: false condition declaration, sending a different/damaged
   item than described, repeated buyback of the "same" item across
   multiple accounts, counterfeit items, doctored photos.
@@ -126,6 +133,7 @@ Mitigation / Detection / Recovery.
   payout, flag account for manual review, ban on confirmed pattern.
 
 ## 8. Malicious upload
+
 - **Vector**: uploading an executable/script disguised as an image,
   oversized files, EXIF-embedded exploits, path traversal via filename.
 - **Likelihood**: Medium.
@@ -142,6 +150,7 @@ Mitigation / Detection / Recovery.
   abuse, review CSP/storage bucket policy.
 
 ## 9. Data leak (PII / financial)
+
 - **Vector**: overexposed admin views, verbose error messages/stack
   traces, logs containing secrets, misconfigured storage ACLs, missing
   authorization on export/invoice endpoints.
@@ -159,6 +168,7 @@ Mitigation / Detection / Recovery.
   pending").
 
 ## 10. Supply chain attack
+
 - **Vector**: compromised npm dependency, malicious GitHub Action,
   compromised base Docker image, typosquatted package.
 - **Likelihood**: Medium (industry-wide rising trend).
@@ -173,6 +183,7 @@ Mitigation / Detection / Recovery.
   secret the CI environment had access to, rebuild and redeploy.
 
 ## 11. Fraud scenario checklist (brief §39, mapped to mitigations above)
+
 Multi-account abuse → device/email/IP signals feed FraudSignal + TrustScore.
 Coupon abuse → server-side usage limits, per-user constraints.
 Refund abuse → return workflow requires reason + review threshold.

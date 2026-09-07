@@ -4,7 +4,13 @@ import { PrismaClient } from "@prisma/client";
 // types without importing "@prisma/client" directly (that import is
 // restricted to this file and server/repositories/** - see
 // eslint.config.mjs and ARCHITECTURE.md §2).
-export type { Role } from "@prisma/client";
+export type {
+  Role,
+  Category,
+  EventType,
+  ProductCondition,
+  ProductStatus,
+} from "@prisma/client";
 
 // Next.js dev mode reloads modules on every change; without this
 // global-singleton guard each reload would open a fresh Prisma

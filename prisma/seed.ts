@@ -159,17 +159,11 @@ async function seedCatalog() {
       condition: "NEW",
       status: "ACTIVE",
       categoryId: mariage.id,
+      // No seeded ProductImage: real product photos go through the
+      // storage pipeline (ADR-006), not yet wired up in this phase.
+      // The storefront renders a graceful "no photo yet" placeholder.
       variants: {
         create: [{ sku: "ARCHE-BLANC-2M", name: "Blanc / 2m" }],
-      },
-      images: {
-        create: [
-          {
-            url: "https://placehold.co/800x600?text=Arche+florale",
-            alt: "Arche florale blanche",
-            position: 0,
-          },
-        ],
       },
     },
   });

@@ -95,23 +95,44 @@ build on every push/PR - a build is not green unless all of these pass
 (brief §74/§127). The dependency audit step is informational, not a
 hard gate, for the reason documented in that file.
 
+## What's built so far
+
+- **Identity**: signup, email verification, login, logout, password
+  reset - JWT sessions with a server-side revocation ledger (ADR-003).
+- **Catalog**: public browse/search/filter at `/catalogue`, product
+  detail pages at `/produits/[slug]` with SEO metadata, sitemap and
+  robots.txt, NEW vs USED listing distinction.
+- **Admin back-office** at `/admin` (requires the `admin.access`
+  permission - seeded on the `ADMIN`/`SUPER_ADMIN` roles): product
+  CRUD with variants/images, category and event-type management,
+  server-side pagination.
+
 ## Known gaps at this stage of the project (tracked, not hidden)
 
-This repository is at the end of **Phase 2 - Foundation** (see
+This repository is at the end of **Phase 3 - Catalog** (see
 `ROADMAP.md`). Deliberately not yet built:
 
 - **Rate limiting** (SECURITY.md §8) - Redis is provisioned but no
-  limiter is wired into the auth actions yet. Scheduled for Phase 8.
+  limiter is wired into the auth/admin actions yet. Scheduled for Phase 8.
 - **MFA** (TOTP) - the `MfaSecret` table exists but the challenge flow
   isn't wired into login yet. Scheduled for Phase 8.
+- **Product photo uploads** - the admin form takes a plain image URL;
+  the real signed-upload pipeline (ADR-006: magic-byte validation, EXIF
+  stripping, private/public buckets) lands alongside buyback/inspection
+  photos in a later phase. The seeded catalog ships with no images on
+  purpose, so the storefront's "no photo yet" fallback is what you'll
+  see rather than a fake placeholder pipeline.
+- **Search** is simple case-insensitive `contains`, not Postgres
+  full-text (tsvector+GIN) or Meilisearch - fine at this catalog size,
+  flagged in `ROADMAP.md`/`DATABASE.md` as the thing to swap in once it
+  isn't.
 - **Docker Compose was written to spec but could not be run inside this
   session's sandbox** (no accessible Docker daemon there). Everything
   was instead validated against a real local PostgreSQL instance and a
-  real Chromium browser exercising the actual signup/verify/login/
-  logout/reset flow end-to-end - see the ADRs and `ROADMAP.md` for what
-  that covered. Run `docker compose config` and `docker compose up` in
-  a normal environment to confirm the compose file itself before
-  relying on it.
-- Catalog/inventory/cart/checkout/buyback UI and business logic are
-  Phase 3 onward - only the Identity + Catalog data model exists so
-  far, plus a minimal storefront placeholder page.
+  real Chromium browser exercising the actual user/admin flows
+  end-to-end - see the ADRs and `ROADMAP.md` for what that covered. Run
+  `docker compose config` and `docker compose up` in a normal
+  environment to confirm the compose file itself before relying on it.
+- Inventory/cart/checkout/buyback are Phase 4 onward - no purchase CTA
+  exists on product pages yet, deliberately, rather than ship a button
+  that does nothing.

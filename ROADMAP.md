@@ -35,14 +35,35 @@ in this session's sandbox (no reachable Docker daemon) - see README.md
 "Known gaps." Rate limiting and MFA are explicitly deferred to Phase 8,
 as scoped below, not silently skipped.
 
-## Phase 3 — Catalog
+## Phase 3 — Catalog ✅ done
 
-Category/EventType/Tag/Product/ProductVariant/ProductImage CRUD
-(admin) + public browse/search/filter (Postgres full-text to start,
-architecture leaves room for Meilisearch/OpenSearch later per brief
-§60); product detail pages with SEO metadata; NEW vs USED listing
-distinction (DATABASE.md §4) implemented end-to-end for at least one
-category, since it's structurally load-bearing for buyback later.
+Category/EventType/Product/ProductVariant/ProductImage CRUD (admin) +
+public browse/search/filter; product detail pages with SEO metadata
+(`generateMetadata`, `sitemap.ts`, `robots.ts`); NEW vs USED listing
+distinction implemented end-to-end. Search is simple `ILIKE`
+(Prisma `contains`), not real Postgres full-text (tsvector+GIN) yet -
+deliberately deferred until the catalog is large enough to justify it
+(brief §60/§93); the filter/query surface is designed so swapping the
+implementation later doesn't touch calling code. `Tag` exists in the
+schema but has no admin UI yet (not exercised by any listed
+requirement beyond existing) - add it if/when tagging becomes a real
+merchandising need.
+
+Verified live (Playwright, admin@glamdeco.test / customer@glamdeco.test
+against the real Postgres instance): a CUSTOMER hitting `/admin` gets
+the explicit refusal page, not a silent bounce; an ADMIN can create a
+product, see it appear on `/catalogue` once `status = ACTIVE`, and see
+it disappear once switched back to `DRAFT` (`revalidatePath` wired on
+every mutation); category creation works end-to-end. One real bug was
+caught and fixed by this testing: the auto-generated default SKU was
+derived from the raw title, which collided across products sharing a
+title - it's now derived from the already-unique slug instead.
+
+Product photos still have no real upload pipeline (ADR-006/upload
+security lands with buyback/inspection in a later phase) - the admin
+form takes a plain image URL for now, and the seeded catalog ships
+with zero images, rendering the storefront's "no photo yet" fallback
+rather than pretend a photo pipeline exists.
 
 ## Phase 4 — Inventory
 

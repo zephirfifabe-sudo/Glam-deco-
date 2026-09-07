@@ -13,6 +13,7 @@ import { signIn, signOut } from "@/lib/auth/config";
 import { toClientMessage } from "@/lib/errors";
 import { logEvent } from "@/lib/logging/logger";
 import { parseOrThrow } from "@/lib/validation/parse";
+import { appUrl } from "@/lib/appUrl";
 import {
   requestPasswordResetSchema,
   resetPasswordSchema,
@@ -33,11 +34,6 @@ export interface ActionState {
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
-
-function appUrl(path: string): string {
-  const base = process.env.APP_URL ?? "http://localhost:3000";
-  return new URL(path, base).toString();
-}
 
 async function issueEmailVerification(userId: string, email: string) {
   const rawToken = generateRawToken();

@@ -104,6 +104,32 @@ enum InventoryMovementType {
   LOST
 }
 
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  DISPUTED
+}
+
 // --- Identity & access ---
 
 model User {
@@ -123,6 +149,8 @@ model User {
   addresses          Address[]
   consents           Consent[]
   inventoryMovements InventoryMovement[]
+  cart               Cart?
+  orders             Order[]
 
   @@index([status])
 }
@@ -302,6 +330,8 @@ model ProductVariant {
   updatedAt  DateTime @updatedAt
 
   inventoryItems InventoryItem[]
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
 
   @@index([productId])
 }
@@ -360,6 +390,7 @@ model InventoryItem {
 
   images    ProductImage[]
   movements InventoryMovement[]
+  orderItem OrderItem?
 
   @@index([status])
   @@index([productVariantId])
@@ -386,4 +417,117 @@ model InventoryMovement {
 
   @@index([itemId])
   @@index([createdAt])
+}
+
+// --- Cart & Orders ---
+
+// One cart per signed-in user (guest/session-based carts are a Phase
+// 5+ extension noted in DATABASE.md but not built here - userId is
+// required for this phase's scope). CartItem never stores a price -
+// the cart is not a source of truth (brief §27); checkout always
+// recomputes from the current ProductVariant/Product.
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id               String         @id @default(cuid())
+  cartId           String
+  cart             Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+  quantity         Int            @default(1)
+  createdAt        DateTime       @default(now())
+
+  @@unique([cartId, productVariantId])
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  status            OrderStatus @default(PENDING_PAYMENT)
+  subtotalMinor     Int
+  taxMinor          Int
+  shippingMinor     Int
+  totalMinor        Int
+  currency          String      @default("EUR")
+  // No address flow yet (brief scope for this phase is payment, not
+  // shipping) - Shipping/Address-on-order lands with the Shipping
+  // module. Left nullable so that migration is additive, not breaking.
+  shippingAddressId String?
+  billingAddressId  String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id               String         @id @default(cuid())
+  orderId          String
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+  // The specific physical unit allocated to this line (DATABASE.md
+  // §"Orders & Payments") - set at checkout time by
+  // InventoryService.reserveOneUnitInTx, inside the same transaction
+  // that creates this row.
+  inventoryItemId  String         @unique
+  inventoryItem    InventoryItem  @relation(fields: [inventoryItemId], references: [id])
+  unitPriceMinor   Int
+  quantity         Int            @default(1)
+  createdAt        DateTime       @default(now())
+
+  @@index([orderId])
+}
+
+model Payment {
+  id                        String          @id @default(cuid())
+  orderId                   String
+  order                     Order           @relation(fields: [orderId], references: [id])
+  provider                  PaymentProvider @default(STRIPE)
+  providerPaymentIntentId   String?         @unique
+  providerCheckoutSessionId String?         @unique
+  status                    PaymentStatus   @default(PENDING)
+  amountMinor               Int
+  currency                  String          @default("EUR")
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  events PaymentEvent[]
+
+  @@index([orderId])
+  @@index([status])
+}
+
+// Idempotency ledger for Stripe webhooks (DATABASE.md §"Orders &
+// Payments", brief §24): the unique (provider, eventId) constraint is
+// what makes a duplicate webhook delivery a no-op. payloadHash (not
+// the raw payload) is stored - enough to detect a genuine content
+// mismatch under a replayed id without holding onto full payment
+// payloads indefinitely (data minimization, brief §109).
+model PaymentEvent {
+  id          String          @id @default(cuid())
+  paymentId   String
+  payment     Payment         @relation(fields: [paymentId], references: [id])
+  provider    PaymentProvider
+  eventId     String
+  type        String
+  payloadHash String
+  receivedAt  DateTime        @default(now())
+  appliedAt   DateTime?
+
+  @@unique([provider, eventId])
+  @@index([paymentId])
 }

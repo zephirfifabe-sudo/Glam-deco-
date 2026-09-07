@@ -111,11 +111,33 @@ hard gate, for the reason documented in that file.
   reservation/release (`server/services/inventory`) - see
   `tests/integration/inventory-concurrency.test.ts` for the required
   last-unit concurrency test.
+- **Cart + Checkout + Stripe**: server-recomputed cart at `/panier`,
+  atomic checkout (reserve inventory + create Order/Payment, then
+  create the Stripe Checkout Session - with a compensating rollback if
+  Stripe can't be reached), a signature-verified and idempotent webhook
+  at `/api/webhooks/stripe`, and an IDOR-guarded order confirmation
+  page at `/commandes/[id]`.
 
 ## Known gaps at this stage of the project (tracked, not hidden)
 
-This repository is at the end of **Phase 4 - Inventory** (see
-`ROADMAP.md`). Deliberately not yet built:
+This repository is at the end of **Phase 5 - Cart + Checkout + Stripe**
+(see `ROADMAP.md`). Deliberately not yet built:
+
+- **A real Stripe payment has never actually run** - this sandbox has
+  no outbound network access to `api.stripe.com` (verified directly).
+  Everything that doesn't require reaching Stripe's API was tested for
+  real (signature verification, webhook idempotency and state
+  transitions, the reservation transaction, and the compensating
+  rollback - which is exercised by a genuine failed network call, not
+  a mock). Session creation actually succeeding and a real test card
+  completing a payment need a real Stripe test-mode account. See
+  `ROADMAP.md` Phase 5 for the exact test-by-test breakdown.
+- **No background job releases stock if a webhook is missed** - only
+  `checkout.session.expired` (received) frees a stuck RESERVED unit;
+  the 30-minute session expiry bounds the exposure but doesn't
+  eliminate it. The outbox/worker pattern this needs isn't built yet.
+- **No shipping address flow** - out of this phase's scope (payment,
+  not fulfillment).
 
 - **Rate limiting** (SECURITY.md §8) - Redis is provisioned but no
   limiter is wired into the auth/admin actions yet. Scheduled for Phase 8.
@@ -138,7 +160,5 @@ This repository is at the end of **Phase 4 - Inventory** (see
   end-to-end - see the ADRs and `ROADMAP.md` for what that covered. Run
   `docker compose config` and `docker compose up` in a normal
   environment to confirm the compose file itself before relying on it.
-- Cart/checkout/buyback are Phase 5 onward - no purchase CTA exists on
-  product pages yet, deliberately, rather than ship a button that does
-  nothing. Catalog products aren't linked to any `InventoryItem` yet
-  either (that wiring happens when checkout needs it in Phase 5).
+- Buyback (the platform's differentiator) is Phase 6 onward - not
+  started yet.

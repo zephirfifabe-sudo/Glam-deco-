@@ -92,13 +92,80 @@ removing `FOR UPDATE SKIP LOCKED` was confirmed to make both tests fail
 (two buyers claiming the same last unit; 3 of 3 buyers succeeding
 against a 2-unit pool) before the real locking code was restored.
 
-## Phase 5 — Cart + Checkout + Stripe
+## Phase 5 — Cart + Checkout + Stripe ✅ done
 
-Cart (server-recomputed pricing only), checkout flow, Stripe Checkout
-Session creation, webhook handler with signature verification +
-idempotent `PaymentEvent`, Order state machine, order confirmation +
-tracking pages. E2E: signup → purchase → Stripe test payment → webhook
-→ order marked paid; plus the last-unit concurrent-purchase test.
+Cart (server-recomputed pricing only - every price shown is read live
+from Product/ProductVariant, never trusted from the client or cached in
+CartItem), checkout flow, Stripe Checkout Session creation, webhook
+handler with signature verification + idempotent `PaymentEvent`, Order
+and Payment state machines, order confirmation page (`/commandes/[id]`,
+IDOR-guarded via `requireOwnerOrPermission`).
+
+Checkout is one atomic transaction (`checkoutService.createCheckoutSession`):
+reserve N inventory units via `reserveOneUnitInTx` (Phase 4), create the
+Order/OrderItems/Payment, all-or-nothing. Only _after_ that commits does
+it call Stripe. If Stripe can't be reached, a compensating transaction
+releases every reserved unit and cancels the Order/Payment - verified
+for real in this sandbox, which has no outbound access to
+api.stripe.com: the compensation path isn't mocked, it's exercised by
+an actual failed network call every time the test runs.
+
+The Stripe Checkout Session's `expires_at` is set to 30 minutes (not
+Stripe's 24h default) specifically to bound how long an abandoned
+checkout can hold a unit RESERVED; `checkout.session.expired` in the
+webhook is what actually releases it - see "Known gaps" below for what
+this does and doesn't cover.
+
+**What could and couldn't be verified in this sandbox** (no outbound
+network access to api.stripe.com - confirmed via a direct connection
+test, egress policy rejects it): could not exercise a real Stripe test
+payment end-to-end. Instead:
+
+- `tests/integration/checkout-compensation.test.ts` - the reservation +
+  Order/Payment creation transaction, and the real compensating
+  rollback when the (real, actually-failing) Stripe API call fails.
+- `tests/integration/stripe-webhook.test.ts` - `checkout.session.completed`
+  and `checkout.session.expired` applied via `applyStripeEvent` directly
+  (bypassing the network-dependent parts of Stripe entirely): payment
+  succeeded, order paid, unit sold; idempotent replay of the same event
+  id has no additional effect; a tight completed/expired race never
+  cancels an already-paid order.
+- `tests/integration/stripe-signature.test.ts` - signature verification
+  itself (`stripe.webhooks.constructEvent`/`generateTestHeaderString`
+  are local HMAC operations, no network needed): a correctly-signed
+  payload is accepted, a wrong-secret signature is rejected, a
+  tampered payload under a validly-shaped signature is rejected, a
+  missing signature header is rejected.
+- A full Playwright run (add to cart → cart page → attempt checkout)
+  confirmed the user-facing failure mode is a clean, generic error
+  message ("Une erreur est survenue...") - never a raw stack trace or
+  the underlying network error - and confirmed the reserved unit was
+  back to AVAILABLE afterward.
+
+A real Stripe test-mode account and a reachable network are needed to
+verify the parts this sandbox structurally cannot: session creation
+actually succeeding, redirect to Stripe's hosted page, a real test
+card completing a payment, and Stripe's own retry behavior on a slow
+webhook response.
+
+**Known gaps, deliberate and tracked:**
+
+- No background job releases a RESERVED unit if Stripe never sends
+  `checkout.session.expired` (e.g. the webhook endpoint itself was
+  down at the wrong moment) - the outbox/worker pattern in
+  ARCHITECTURE.md §1 isn't built yet. Until it is, a stuck reservation
+  needs a manual admin fix. This is the same class of gap as rate
+  limiting/MFA (Phase 8): known, bounded (30-minute session expiry
+  caps the exposure), not silently absorbed.
+- No shipping address flow - `Order.shippingAddressId`/`billingAddressId`
+  are nullable and unused for now. Out of this phase's scope (payment,
+  not fulfillment); the Shipping module is a later phase.
+- `calculateOrderTotal`'s VAT rate (21%, Belgium standard) is a
+  placeholder, explicitly not a substitute for professional tax
+  configuration before real transactions (brief §54) - see the comment
+  in `server/domain/pricing/calculateOrderTotal.ts`.
+- Guest checkout doesn't exist - `Cart.userId` is required, matching
+  DATABASE.md's note that guest/session carts are a later extension.
 
 ## Phase 6 — Buyback (MVP slice)
 

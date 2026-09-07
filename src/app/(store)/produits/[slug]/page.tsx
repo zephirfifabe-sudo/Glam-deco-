@@ -4,6 +4,7 @@ import Image from "next/image";
 import { getPublicProductBySlug } from "@/server/services/catalog/productService";
 import { Badge } from "@/components/ui/Badge";
 import { Price } from "@/components/ui/Price";
+import { AddToCartForm } from "@/features/cart/AddToCartForm";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -98,11 +99,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
           </div>
         )}
 
-        {/*
-          No purchase CTA yet on purpose: cart/checkout land in Phase 5
-          (ROADMAP.md). Shipping a fake "Add to cart" button that does
-          nothing would be dishonest about what's actually built.
-        */}
+        <AddToCartForm variants={product.variants} />
       </div>
     </main>
   );

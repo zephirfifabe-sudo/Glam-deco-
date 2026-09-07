@@ -14,6 +14,9 @@ export type {
   InventoryStatus,
   InventoryAcquisitionSource,
   InventoryMovementType,
+  OrderStatus,
+  PaymentProvider,
+  PaymentStatus,
 } from "@prisma/client";
 
 // A Prisma interactive-transaction handle - the type callers need to
